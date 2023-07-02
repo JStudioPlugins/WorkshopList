@@ -125,7 +125,7 @@ namespace WorkshopList
         public void LoadMessageId()
         {
             string path = DataFilePath;
-            if (!File.Exists(Path.Combine(path, "data.dat"))) { MessageId = ulong.MinValue; return; }
+            if (!File.Exists(path)) { MessageId = ulong.MinValue; return; }
 
             Block block = ReadWrite.readBlock(path, false, false, 0);
             MessageId = block.readUInt64();
