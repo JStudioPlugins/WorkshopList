@@ -12,6 +12,7 @@ using ShimmyMySherbet.DiscordWebhooks;
 using System.Threading.Tasks;
 using ShimmyMySherbet.DiscordWebhooks.Embeded;
 using Newtonsoft.Json;
+using System.Threading;
 
 namespace WorkshopList
 {
@@ -49,13 +50,13 @@ namespace WorkshopList
         protected override void Load()
         {
             Logger.Log($"{Name} {Assembly.GetName().Version} has been loaded.");
-            MessageId = LoadMessageId();
+            Task.Run(() => LoadMessageId());
             Level.onPostLevelLoaded += HandlePostLoaded;
         }
 
         private void HandlePostLoaded(int level)
         {
-            SendWorkshopList();
+            ThreadPool.QueueUserWorkItem(async (o) => await SendWorkshopList());
         }
 
         protected override void Unload()
@@ -64,7 +65,7 @@ namespace WorkshopList
             Logger.Log($"{Name} has been unloaded.");
         }
 
-        public void SendWorkshopList()
+        public async Task SendWorkshopList()
         {
             if (MessageExists(MessageId))
             {
@@ -75,7 +76,7 @@ namespace WorkshopList
                     content += $"\n{details.GetTitle()}" + $" ([{id}](https://steamcommunity.com/sharedfiles/filedetails/?id={details.fileId.m_PublishedFileId}))";
                 }
 
-                DiscordWebhookService.EditMessage(WebhookURL, MessageId, new WebhookMessage().PassEmbed().WithTitle($"Workshop Mods - {Provider.serverName}").WithDescription(content).WithColor(EmbedColor.SlateGray).WithTimestamp(DateTime.Now).Finalize());
+                await DiscordWebhookService.EditMessageAsync(WebhookURL, MessageId, new WebhookMessage().PassEmbed().WithTitle($"Workshop Mods - {Provider.serverName}").WithDescription(content).WithColor(EmbedColor.SlateGray).WithTimestamp(DateTime.Now).Finalize());
             }
             else
             {
@@ -96,16 +97,16 @@ namespace WorkshopList
                     byte[] Buffer = Encoding.UTF8.GetBytes(Payload);
 
                     request.ContentLength = Buffer.Length;
-                    using (Stream write = request.GetRequestStream())
+                    using (Stream write = (await request.GetRequestStreamAsync()))
                     {
-                        write.Write(Buffer, 0, Buffer.Length);
-                        write.Flush();
+                        await write.WriteAsync(Buffer, 0, Buffer.Length);
+                        await write.FlushAsync();
                     }
 
-                    var resp = (HttpWebResponse)request.GetResponse();
+                    var resp = (HttpWebResponse)(await request.GetResponseAsync());
                     Stream receivingStream = resp.GetResponseStream();
                     StreamReader readStream = new StreamReader(receivingStream, Encoding.UTF8);
-                    Message msg = JsonConvert.DeserializeObject<Message>(readStream.ReadToEnd());
+                    Message msg = JsonConvert.DeserializeObject<Message>(await readStream.ReadToEndAsync());
                     SaveMessageId(msg.id);
 
                     /*using WebClient client = new();
@@ -121,13 +122,14 @@ namespace WorkshopList
             }
         }
 
-        public ulong LoadMessageId()
+        public void LoadMessageId()
         {
             string path = DataFilePath;
-            if (!File.Exists(path)) return ulong.MinValue;
+            if (!File.Exists(path)) { MessageId = ulong.MinValue; return; }
 
             Block block = ReadWrite.readBlock(path, false, false, 0);
-            return block.readUInt64();
+            MessageId = block.readUInt64();
+            return;
         }
 
         public void SaveMessageId(ulong messageId)
